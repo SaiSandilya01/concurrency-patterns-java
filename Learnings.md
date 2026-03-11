@@ -333,4 +333,65 @@ Deadlock          → consistent lock ordering (lowest ID first)
 Producer-Consumer → wait()/notifyAll() in while loop + bounded buffer
 Semaphore         → N concurrent threads, acquire()/release()
 Readers-Writers   → activeReaders counter + writerActive flag
+Thread Pool       → task queue + N worker threads looping on wait()/notifyAll()
+```
+
+---
+
+## 8. Thread Pool
+
+### What is it?
+Creating a new thread per task is expensive. A thread pool maintains a fixed set of **pre-created worker threads** that pick up tasks from a shared queue.
+
+```
+Task1 ──┐
+Task2 ──┤──► [Queue] ──► Worker1
+Task3 ──┤              ► Worker2
+Task4 ──┘              ► Worker3
+```
+
+Workers loop forever, picking up tasks. No thread creation overhead per task.
+
+### Key design decisions
+
+**Backpressure** — block `submit()` if queue is too full:
+```java
+while (taskQueue.size() >= workers.length) { wait(); }
+```
+
+**Worker loop**:
+```java
+while (true) {
+    Runnable task;
+    synchronized (threadPool) {
+        while (taskQueue.isEmpty() && !isShutdown) { wait(); }
+        if (isShutdown && taskQueue.isEmpty()) return;  // graceful exit
+        task = taskQueue.poll();
+        notifyAll();  // wake blocked submit()
+    }
+    task.run();  // ← OUTSIDE the lock! otherwise only 1 worker runs at a time
+}
+```
+
+**Shutdown**:
+```java
+isShutdown = true;
+notifyAll();  // wake all sleeping workers so they can see the flag and exit
+```
+
+### Common mistakes
+- Running `task.run()` **inside** the synchronized block — kills concurrency, only 1 worker active at a time
+- Using `notify()` instead of `notifyAll()` after polling — may wake the wrong thread
+- Not handling the shutdown flag — workers loop forever after shutdown
+
+### Wait conditions are mutually exclusive
+- Workers wait when queue is **empty**
+- `submit()` waits when queue is **full**
+- These can never both be true → `notify()` would be safe, but `notifyAll()` is safer practice
+
+### Java's built-in (after you build it yourself)
+```java
+ExecutorService pool = Executors.newFixedThreadPool(3);
+pool.submit(() -> System.out.println("task"));
+pool.shutdown();
 ```
