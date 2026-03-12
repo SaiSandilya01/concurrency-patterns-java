@@ -395,3 +395,52 @@ ExecutorService pool = Executors.newFixedThreadPool(3);
 pool.submit(() -> System.out.println("task"));
 pool.shutdown();
 ```
+
+---
+
+## 9. Dining Philosophers
+
+### The Problem
+5 philosophers sit around a table. Between each pair is 1 fork. To eat, a philosopher needs **both** the left and right forks.
+
+If everyone picks up their left fork at the exact same time, they all wait forever for their right fork. **Circular Wait = Deadlock.**
+
+### Solution 1: Lock Ordering (The Interview Standard)
+Just like Bank Transfer, force a global ordering. Instead of picking "left then right", pick the **lower numbered fork first**.
+
+```java
+int firstFork = Math.min(leftFork, rightFork);
+int secondFork = Math.max(leftFork, rightFork);
+
+synchronized (forks[firstFork]) {
+    synchronized (forks[secondFork]) {
+        // eat
+    }
+}
+```
+*Why it works:* The last philosopher (id 4) wants forks 4 and 0. Instead of picking 4 first, they pick 0 first. Since Philosopher 0 already has fork 0, Philosopher 4 is blocked immediately, breaking the circle and letting Philosopher 3 eat.
+
+### Solution 2: The Arbitrator / Waiter (Your Custom Structural Fix)
+Introduce a central "Waiter" who controls the forks. A philosopher asks the Waiter for *both* forks at once. 
+The Waiter only hands them over if both are free.
+
+```java
+class Waiter {
+    boolean[] forks = new boolean[5];
+    
+    public synchronized void pickUpForks(int id) throws InterruptedException {
+        int left = id, right = (id + 1) % 5;
+        // Wait until BOTH are free
+        while (forks[left] || forks[right]) { wait(); } 
+        forks[left] = forks[right] = true;
+    }
+    
+    public synchronized void putDownForks(int id) {
+        int left = id, right = (id + 1) % 5;
+        forks[left] = forks[right] = false;
+        // Wake up everybody who is waiting for forks
+        notifyAll(); 
+    }
+}
+```
+*Why it works:* Forks are never acquired one-by-one. It's an atomic "all or nothing" grab. This naturally allows up to `floor(n/2)` non-adjacent philosophers to eat simultaneously. This perfectly prevents deadlock and is very elegant.
