@@ -444,3 +444,34 @@ class Waiter {
 }
 ```
 *Why it works:* Forks are never acquired one-by-one. It's an atomic "all or nothing" grab. This naturally allows up to `floor(n/2)` non-adjacent philosophers to eat simultaneously. This perfectly prevents deadlock and is very elegant.
+
+---
+
+## 10. Advanced Concurrency Tools (Rate Limiter Learnings)
+
+### CountDownLatch (The Stampede Generator)
+Used to make threads wait for a specific condition or synchronize their starting times.
+- `new CountDownLatch(1)` acts as a red traffic light. 
+- `latch.await()` makes threads sleep frozen at the starting line.
+- `latch.countDown()` turns the light green, waking all threads instantly. 
+**Use Case:** Excellent for stress-testing **race conditions** by hammering an endpoint with 100 threads at the exact same millisecond.
+
+### ConcurrentHashMap.computeIfAbsent() vs Global Locks
+A common anti-pattern to prevent a "Check-Then-Act" race condition is locking an entire object:
+```java
+// ❌ BAD: Global Bottleneck. Entire app is single-threaded here!
+synchronized(this) { 
+    if (!map.containsKey("User")) { 
+        map.put("User", new Bucket()); 
+    }
+}
+```
+
+The elegant fix is `map.computeIfAbsent(key, mappingFunction)`.
+1. **Thread-Safe Check-Then-Act**: It atomically checks for the key and puts the value if missing.
+2. **Fragmented Locking**: A `ConcurrentHashMap` doesn't use one giant lock. It divides its memory into "segments". When you run `computeIfAbsent`, it only locks the tiny fraction of the Map where that user lives. Thread A and Thread B can insert totally different keys simultaneously without waiting for each other!
+3. **Lazy Evaluation (`k -> new Bucket()`)**: Why the weird arrow syntax? If we wrote `computeIfAbsent(key, new Bucket())`, Java would instantiate a brand new Bucket object on every single request, even if the user was already in the map, wasting massive CPU and memory. The lambda arrow tells Java: *"Here are instructions. ONLY run them if the user isn't in the map yet."*
+
+### HashMap vs ConcurrentHashMap (Speed vs Safety)
+- **`HashMap` (Single-Threaded):** Zero locking overhead, so it runs at maximum CPU speeds. Use it 95% of the time when passing data locally or parsing objects where only a single thread will ever access the map. *(Note: If multiple threads write to it simultaneously, the data structure corrupts).*
+- **`ConcurrentHashMap` (Multi-Threaded):** Contains internal memory overhead for lock management. Use it strictly for **Shared State** across the server (like caches, connection pools, and Rate Limiters). It is entirely thread-safe but strictly forbids `null` keys and `null` values.
