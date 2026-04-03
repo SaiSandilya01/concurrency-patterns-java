@@ -34,3 +34,7 @@ if (!users.containsKey("Bob")) {
 ```
 
 *Solution:* Utilizing `ConcurrentHashMap.computeIfAbsent()`. This provides memory-level synchronization on the exact hash bucket being manipulated, safely executing lambda evaluations only if the data is genuinely absent. This prevents global locking bottlenecks that would otherwise serialize the entire server.
+
+### 3. Distributed Redis Rate Limiter
+The above algorithms execute inside the single JVM heap space. For distributed architectures where multiple load-balanced Java servers exist, they are unviable due to the "Read-Modify-Write" gap across the network.
+- **The Solution (Lua Scripts):** `FixedWindow.lua` provides a thread-safe, atomic execution layer processed natively inside the Redis DB engine. `RedisRateLimiter.java` leverages libraries like `jedis` to dynamically inject the Lua script avoiding any Java synchronization issues!
